@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Script, Settings, Version } from '../lib/types';
-import { LANG_LABEL } from '../lib/types';
+import { LANG_LABEL, REVISION_DRAFTS } from '../lib/types';
 import { Modal } from '../ui/Modal';
 import { useEditor } from './context';
 import {
@@ -195,7 +195,25 @@ export function VersionsDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal title="Version history" onClose={onClose}>
+    <Modal title="Version history & Revision Tracking" onClose={onClose}>
+      <div className="revision-select-section" style={{ marginBottom: 16 }}>
+        <div className="lbl">Active Production Revision Draft (WGA Standard)</div>
+        <p className="muted small">Sets the active revision colour badge across headings and exports.</p>
+        <div className="revision-pills">
+          {REVISION_DRAFTS.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              className={'revision-pill' + ((script.revisionColor ?? 'white') === d.id ? ' on' : '')}
+              onClick={() => ops.update((s) => ({ ...s, revisionColor: d.id }), false)}
+            >
+              <span className="dot" style={{ backgroundColor: d.hex, border: d.id === 'white' ? '1px solid #ccc' : 'none' }} />
+              <span>{d.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <form className="row" onSubmit={async (e) => { e.preventDefault(); await saveVersion(ops.get(), label.trim() || 'Draft ' + new Date().toLocaleDateString('en-IN')); setLabel(''); refresh(); }}>
         <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Name this draft, e.g. “Blue draft”" aria-label="Version name" />
         <button className="primary" type="submit">Save version</button>
@@ -419,14 +437,30 @@ export function SettingsDialog({
         </label>
 
         <h4>Page Count Calibration (Script-Aware)</h4>
-        <p className="muted small">1 page ≈ 1 minute is calibrated for Latin scripts. Malayalam and Tamil glyphs are wider, so each is weighted higher than a standard Courier character. Calibrate if your printed screenplay differs.</p>
-        {(['ml', 'ta'] as const).map((l) => (
+        <p className="muted small">1 page ≈ 1 minute is calibrated for Latin scripts. Malayalam, Tamil, Telugu, and Kannada glyphs are wider, so each is weighted higher than a standard Courier character. Calibrate if your printed screenplay differs.</p>
+        {(['ml', 'ta', 'te', 'kn'] as const).map((l) => (
           <label key={l} className="slider">
-            {LANG_LABEL[l]} width factor: ×{cal[l].toFixed(2)}
-            <input type="range" min={1} max={2.2} step={0.05} value={cal[l]} onChange={(e) => onChange({ ...settings, calibration: { ...cal, [l]: +e.target.value } })} />
+            {LANG_LABEL[l]} width factor: ×{(cal[l] ?? DEFAULT_CALIBRATION[l]).toFixed(2)}
+            <input type="range" min={1} max={2.2} step={0.05} value={cal[l] ?? DEFAULT_CALIBRATION[l]} onChange={(e) => onChange({ ...settings, calibration: { ...cal, [l]: +e.target.value } })} />
           </label>
         ))}
         <button className="link" onClick={() => onChange({ ...settings, calibration: DEFAULT_CALIBRATION })}>Reset calibration to defaults</button>
+
+        <h4>Community & Recognition Model</h4>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={settings.donateHandwriting ?? false}
+            onChange={(e) => onChange({ ...settings, donateHandwriting: e.target.checked })}
+          />
+          <span>
+            <b>Contribute anonymous pen strokes to Regional Script Corpus</b>
+            <br />
+            <span className="muted small">
+              Opt-in to improve open-source handwriting recognition models for regional cinema. Only coordinates and timing are donated; screenplay text is never shared.
+            </span>
+          </span>
+        </label>
 
         <h4>Storage & Privacy</h4>
         <p className="small">All scripts, versions, voice memos and photos are stored strictly on this device (IndexedDB). Zero external telemetry.</p>

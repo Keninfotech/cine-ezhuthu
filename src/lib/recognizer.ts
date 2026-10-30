@@ -22,7 +22,7 @@ export interface Recognizer {
   recognize(strokes: Stroke[], lang: Lang, area: { width: number; height: number }): Promise<Recognition>;
 }
 
-const BCP47: Record<Lang, string> = { ml: 'ml', ta: 'ta', en: 'en' };
+const BCP47: Record<Lang, string> = { ml: 'ml', ta: 'ta', te: 'te', kn: 'kn', en: 'en' };
 
 // ---------- 1. W3C Handwriting Recognition API ----------
 

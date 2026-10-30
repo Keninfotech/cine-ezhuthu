@@ -30,7 +30,7 @@ const Speech: SpeechCtor | undefined =
   (window as unknown as { SpeechRecognition?: SpeechCtor }).SpeechRecognition ??
   (window as unknown as { webkitSpeechRecognition?: SpeechCtor }).webkitSpeechRecognition;
 
-const SPEECH_LANG: Record<Lang, string> = { ml: 'ml-IN', ta: 'ta-IN', en: 'en-IN' };
+const SPEECH_LANG: Record<Lang, string> = { ml: 'ml-IN', ta: 'ta-IN', te: 'te-IN', kn: 'kn-IN', en: 'en-IN' };
 
 export function HandwritingPad({ onClose }: { onClose: () => void }) {
   const ctx = useEditor();

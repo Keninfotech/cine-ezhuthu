@@ -4,6 +4,7 @@ import { transliterate } from '../translit';
 import {
   checkCharacterConsistency, cycleType, detectScript, eighths, findAll, nextType,
   pageCount, parseHeading, renameCharacter, replaceAll, breakdown, DEFAULT_CALIBRATION, visualWidth,
+  generateShotList, convertTreatmentToScenes,
 } from '../screenplay';
 import { sampleScript } from '../sample';
 import { toFountain, breakdownCSV, toPlainText } from '../exporters';
@@ -31,6 +32,14 @@ describe('transliteration', () => {
     ['thambi', 'தம்பி'],
     ['nalla padam', 'நல்ல படம்'],
   ])('Tanglish %s → %s', (a, b) => expect(transliterate(a, 'ta')).toBe(b));
+  test.each([
+    ['amma', 'అమ్మ'],
+    ['nEnu', 'నేను'],
+  ])('Tenglish %s → %s', (a, b) => expect(transliterate(a, 'te')).toBe(b));
+  test.each([
+    ['amma', 'ಅಮ್ಮ'],
+    ['naanu', 'ನಾನು'],
+  ])('Kanglish %s → %s', (a, b) => expect(transliterate(a, 'kn')).toBe(b));
   test('leaves existing Indic text, digits and punctuation alone', () => {
     expect(transliterate('രാമു: 2 chaaya!', 'ml')).toBe('രാമു: 2 ചായ!');
   });
@@ -46,13 +55,35 @@ describe('screenplay rules', () => {
   test('language tagging', () => {
     expect(detectScript('ഞാൻ')).toBe('ml');
     expect(detectScript('நான்')).toBe('ta');
+    expect(detectScript('నేను')).toBe('te');
+    expect(detectScript('ನಾನು')).toBe('kn');
     expect(detectScript('ഒരു ചായ, please')).toBe('mixed');
     expect(detectScript('123')).toBe('none');
   });
-  test('headings in English and Malayalam', () => {
+  test('headings in English, Malayalam, Tamil, Telugu, and Kannada', () => {
     expect(parseHeading('INT. ചായക്കട - രാവിലെ')).toMatchObject({ intExt: 'INT', location: 'ചായക്കട', timeNormalized: 'MORNING' });
     expect(parseHeading('ext. bus stop — night')).toMatchObject({ intExt: 'EXT', location: 'bus stop', timeNormalized: 'NIGHT' });
     expect(parseHeading('வெளி. கோவில் - இரவு')).toMatchObject({ location: 'கோவில்', timeNormalized: 'NIGHT' });
+    expect(parseHeading('INT. ఇల్లు - పగలు')).toMatchObject({ location: 'ఇల్లు', timeNormalized: 'DAY' });
+    expect(parseHeading('INT. ಮನೆ - ದಿನ')).toMatchObject({ location: 'ಮನೆ', timeNormalized: 'DAY' });
+  });
+  test('shot list generator', () => {
+    const s = sampleScript();
+    const shots = generateShotList(s.scenes[0]);
+    expect(shots.length).toBeGreaterThanOrEqual(3);
+    expect(shots[0].type).toMatch(/EWS|WS/);
+    expect(shots[0].subject).toContain('ചായക്കട');
+  });
+  test('writing ladder and treatment conversion', () => {
+    const s = sampleScript();
+    expect(s.idea?.seed).toBeTruthy();
+    expect(s.story?.prose).toBeTruthy();
+    expect(s.synopsis?.beats).toHaveLength(3);
+    expect(s.treatment?.scenes).toHaveLength(3);
+    const converted = convertTreatmentToScenes(s.treatment!);
+    expect(converted).toHaveLength(3);
+    expect(converted[0].heading).toContain('ചായക്കട');
+    expect(converted[0].blocks.length).toBeGreaterThan(0);
   });
   test('consistency checker finds രാമു / രാമൂ', () => {
     const issues = checkCharacterConsistency(sampleScript());
@@ -71,7 +102,7 @@ describe('screenplay rules', () => {
     const s = sampleScript();
     s.scenes[0].blocks[0].text = 'പുറത്ത് കനത്ത മഴ പെയ്യുന്നു. '.repeat(20);
     const ml = pageCount(s, DEFAULT_CALIBRATION).pages;
-    const flat = pageCount(s, { en: 1, ml: 1, ta: 1 }).pages;
+    const flat = pageCount(s, { en: 1, ml: 1, ta: 1, te: 1, kn: 1 }).pages;
     expect(ml).toBeGreaterThan(flat);
   });
   test('eighths', () => {

@@ -1,4 +1,4 @@
-import type { Block, ElementType, Lang, Scene, Script, Settings } from './types';
+import type { Block, ElementType, Lang, Scene, Script, Settings, ShotItem, TreatmentData } from './types';
 import { uid } from './types';
 
 export const ELEMENT_LABEL: Record<ElementType, string> = {
@@ -47,6 +47,8 @@ export type ScriptTag = Lang | 'mixed' | 'none';
 
 const RE_ML = /[ഀ-ൿ]/;
 const RE_TA = /[஀-௿]/;
+const RE_TE = /[\u0C00-\u0C7F]/;
+const RE_KN = /[\u0C80-\u0CFF]/;
 const RE_LAT = /[A-Za-z]/;
 
 /** Detect which script(s) a piece of text is written in. */
@@ -54,6 +56,8 @@ export function detectScript(text: string): ScriptTag {
   const found = new Set<Lang>();
   if (RE_ML.test(text)) found.add('ml');
   if (RE_TA.test(text)) found.add('ta');
+  if (RE_TE.test(text)) found.add('te');
+  if (RE_KN.test(text)) found.add('kn');
   if (RE_LAT.test(text)) found.add('en');
   if (found.size === 0) return 'none';
   if (found.size > 1) return 'mixed';
@@ -67,6 +71,8 @@ const TIME_WORDS: Record<string, string> = {
   CONTINUOUS: 'CONTINUOUS', LATER: 'LATER',
   'പകൽ': 'DAY', 'രാത്രി': 'NIGHT', 'രാവിലെ': 'MORNING', 'വൈകുന്നേരം': 'EVENING', 'സന്ധ്യ': 'DUSK', 'പുലർച്ചെ': 'DAWN',
   'பகல்': 'DAY', 'இரவு': 'NIGHT', 'காலை': 'MORNING', 'மாலை': 'EVENING', 'அதிகாலை': 'DAWN',
+  'పగలు': 'DAY', 'రాత్రి': 'NIGHT', 'ఉదయం': 'MORNING', 'సాయంత్రం': 'EVENING',
+  'ದಿನ': 'DAY', 'ರಾತ್ರಿ': 'NIGHT', 'ಬೆಳಿಗ್ಗೆ': 'MORNING', 'ಸಂಜೆ': 'EVENING',
 };
 
 export interface ParsedHeading {
@@ -78,7 +84,7 @@ export interface ParsedHeading {
 
 export function parseHeading(h: string): ParsedHeading {
   const s = h.trim();
-  const m = s.match(/^(INT\.?\/EXT\.?|EXT\.?\/INT\.?|I\/E\.?|INT\.?|EXT\.?|ഇന്റ്\.?|എക്സ്റ്റ്\.?|உள்\.?|வெளி\.?)\s*/i);
+  const m = s.match(/^(INT\.?\/EXT\.?|EXT\.?\/INT\.?|I\/E\.?|INT\.?|EXT\.?|ഇന്റ്\.?|എക്സ്റ്റ്\.?|உள்\.?|வெளி\.?|ఇంట్\.?|ఎక్స్ట్\.?|ಒಳ\.?|ಹೊರ\.?)\s*/i);
   const intExt = m ? m[1].toUpperCase().replace(/\.$/, '') : '';
   let rest = m ? s.slice(m[0].length) : s;
   let time = '';
@@ -213,14 +219,16 @@ const WIDTH: Record<ElementType | 'heading', number> = {
 };
 const LINES_PER_PAGE = 55;
 
-export const DEFAULT_CALIBRATION: Settings['calibration'] = { en: 1, ml: 1.45, ta: 1.55 };
+export const DEFAULT_CALIBRATION: Settings['calibration'] = { en: 1, ml: 1.45, ta: 1.55, te: 1.48, kn: 1.48 };
 
 /** Visual width of text in "Courier character" units. Indic clusters are wider than Latin letters. */
 export function visualWidth(text: string, cal: Settings['calibration']): number {
   let w = 0;
   for (const g of graphemes(text)) {
-    if (RE_ML.test(g)) w += cal.ml;
-    else if (RE_TA.test(g)) w += cal.ta;
+    if (RE_ML.test(g)) w += cal.ml ?? 1.45;
+    else if (RE_TA.test(g)) w += cal.ta ?? 1.55;
+    else if (RE_TE.test(g)) w += cal.te ?? 1.48;
+    else if (RE_KN.test(g)) w += cal.kn ?? 1.48;
     else w += 1;
   }
   return w;
@@ -351,4 +359,99 @@ export function wordCount(script: Script): number {
     for (const b of s.blocks) n += b.text.split(/\s+/).filter(Boolean).length;
   }
   return n;
+}
+
+// ---------- Shot List Generator (Brainstorm Report) ----------
+
+export function generateShotList(scene: Scene): ShotItem[] {
+  const shots: ShotItem[] = [];
+  const h = parseHeading(scene.heading);
+  const chars = charactersInScene(scene);
+  const isExt = /^EXT/i.test(h.intExt);
+
+  // 1. Establishing / Wide
+  shots.push({
+    id: uid(),
+    type: isExt ? 'EWS' : 'WS',
+    angle: 'Eye-level',
+    subject: h.location || 'Location',
+    description: `Establishing shot of ${h.location || 'scene'} during ${h.timeNormalized || 'day'}.`,
+  });
+
+  // 2. Scene Master
+  if (chars.length > 0) {
+    shots.push({
+      id: uid(),
+      type: 'MS',
+      angle: 'Eye-level',
+      subject: chars.join(', '),
+      description: `Master shot capturing spatial positions and initial movement of ${chars.join(' and ')}.`,
+    });
+  }
+
+  // 3. Dialogue or Action shots
+  if (chars.length >= 2) {
+    shots.push({
+      id: uid(),
+      type: 'OTS',
+      angle: 'Eye-level',
+      subject: `${chars[0]} & ${chars[1]}`,
+      description: `Over-the-shoulder coverage framing dialogue exchanges.`,
+    });
+  }
+
+  for (const c of chars.slice(0, 3)) {
+    shots.push({
+      id: uid(),
+      type: 'MCU',
+      angle: 'Eye-level',
+      subject: c,
+      description: `Medium close-up on ${c} capturing speech delivery and character expression.`,
+    });
+  }
+
+  // 4. Detail / Insert shot for key props or atmosphere
+  shots.push({
+    id: uid(),
+    type: 'CU',
+    angle: 'Eye-level',
+    subject: 'Action Detail / Props',
+    description: `Close-up on pivotal actions, hands, or focal environmental details in the scene.`,
+  });
+
+  return shots;
+}
+
+// ---------- Treatment Converter (Proposal Stage 4 -> Stage 5) ----------
+
+export function convertTreatmentToScenes(treatment: TreatmentData): Scene[] {
+  if (!treatment.scenes.length) return [newScene('')];
+  return treatment.scenes.map((ts) => {
+    let heading = ts.slug.trim();
+    if (!heading) {
+      const loc = ts.location.trim() || 'LOCATION';
+      const time = ts.time.trim() || 'DAY';
+      heading = `INT. ${loc} - ${time}`;
+    }
+    const blocks: Block[] = [];
+    if (ts.description.trim()) {
+      blocks.push(newBlock('action', ts.description.trim()));
+    }
+    if (ts.characters.length > 0) {
+      for (const ch of ts.characters) {
+        if (ch.trim()) {
+          blocks.push(newBlock('character', ch.trim()));
+          blocks.push(newBlock('dialogue', ''));
+        }
+      }
+    }
+    if (blocks.length === 0) {
+      blocks.push(newBlock('action', ''));
+    }
+    return {
+      ...newScene(heading),
+      synopsis: ts.description.slice(0, 120),
+      blocks,
+    };
+  });
 }

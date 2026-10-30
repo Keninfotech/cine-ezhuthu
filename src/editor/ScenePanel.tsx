@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MediaItem, Scene, Stroke } from '../lib/types';
+import type { MediaItem, Scene, ShotItem, Stroke } from '../lib/types';
 import { uid } from '../lib/types';
 import { deleteMedia, getMedia, putMedia } from '../lib/db';
-import { charactersInScene, parseHeading } from '../lib/screenplay';
+import { charactersInScene, generateShotList, parseHeading } from '../lib/screenplay';
 import { InkCanvas } from './InkCanvas';
 import { useEditor } from './context';
 import { Modal } from '../ui/Modal';
@@ -197,6 +197,97 @@ export function ScenePanel({ scene, number, pages, onClose }: { scene: Scene; nu
         </div>
         <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
         <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
+
+        <h4>Shot list (Director&apos;s breakdown)</h4>
+        <p className="muted small">Suggest camera framing, angles, and shot types from the scene dialogue and action.</p>
+        <div className="row" style={{ marginBottom: 8 }}>
+          <button className="primary small" onClick={() => ops.updateScene(scene.id, { shots: generateShotList(scene) }, true)}>
+            ⚡ Generate shot list
+          </button>
+          <button
+            className="small"
+            onClick={() => {
+              const item: ShotItem = { id: uid(), type: 'MS', angle: 'Eye-level', subject: 'Subject', description: '' };
+              ops.updateScene(scene.id, { shots: [...(scene.shots ?? []), item] }, true);
+            }}
+          >
+            + Add shot
+          </button>
+        </div>
+
+        {(!scene.shots || scene.shots.length === 0) ? (
+          <p className="muted small">No camera shots planned yet. Tap &ldquo;Generate shot list&rdquo; for director suggestions.</p>
+        ) : (
+          <div className="shot-list">
+            {scene.shots.map((sh, idx) => (
+              <div key={sh.id} className="shot-item">
+                <div className="shot-item-head">
+                  <span className="shot-num">#{idx + 1}</span>
+                  <select
+                    className="input small shot-type-select"
+                    value={sh.type}
+                    onChange={(e) => {
+                      const updated = (scene.shots ?? []).map((s) => (s.id === sh.id ? { ...s, type: e.target.value } : s));
+                      ops.updateScene(scene.id, { shots: updated }, true);
+                    }}
+                  >
+                    <option value="EWS">EWS (Extreme Wide)</option>
+                    <option value="WS">WS (Wide Shot)</option>
+                    <option value="MS">MS (Medium Shot)</option>
+                    <option value="MCU">MCU (Medium Close-Up)</option>
+                    <option value="CU">CU (Close-Up)</option>
+                    <option value="ECU">ECU (Extreme Close-Up)</option>
+                    <option value="OTS">OTS (Over The Shoulder)</option>
+                    <option value="POV">POV (Point of View)</option>
+                  </select>
+                  <select
+                    className="input small shot-angle-select"
+                    value={sh.angle ?? 'Eye-level'}
+                    onChange={(e) => {
+                      const updated = (scene.shots ?? []).map((s) => (s.id === sh.id ? { ...s, angle: e.target.value } : s));
+                      ops.updateScene(scene.id, { shots: updated }, true);
+                    }}
+                  >
+                    <option value="Eye-level">Eye-level</option>
+                    <option value="Low angle">Low angle</option>
+                    <option value="High angle">High angle</option>
+                    <option value="Dutch angle">Dutch angle</option>
+                    <option value="Bird's eye">Bird&apos;s eye</option>
+                  </select>
+                  <button
+                    className="link danger small"
+                    onClick={() => {
+                      const updated = (scene.shots ?? []).filter((s) => s.id !== sh.id);
+                      ops.updateScene(scene.id, { shots: updated }, true);
+                    }}
+                    title="Remove shot"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <input
+                  className="input small shot-subject-input"
+                  placeholder="Subject / Framing"
+                  value={sh.subject}
+                  onChange={(e) => {
+                    const updated = (scene.shots ?? []).map((s) => (s.id === sh.id ? { ...s, subject: e.target.value } : s));
+                    ops.updateScene(scene.id, { shots: updated }, true);
+                  }}
+                />
+                <textarea
+                  className="input small shot-desc-input"
+                  rows={2}
+                  placeholder="Shot description & director instructions..."
+                  value={sh.description}
+                  onChange={(e) => {
+                    const updated = (scene.shots ?? []).map((s) => (s.id === sh.id ? { ...s, description: e.target.value } : s));
+                    ops.updateScene(scene.id, { shots: updated }, true);
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
 
         <h4>Margin notes & sketches</h4>
         <p className="muted small">Kept as original ink — never converted. Perfect for camera angles, lighting notes, and blocking diagrams.</p>

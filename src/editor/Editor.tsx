@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ElementType, Script, Settings } from '../lib/types';
-import { LANG_NATIVE } from '../lib/types';
-import { allCharacters, allLocations, checkCharacterConsistency, eighths, ELEMENT_LABEL, pageCount, wordCount } from '../lib/screenplay';
+import type { ElementType, Script, Settings, WritingStage } from '../lib/types';
+import { LANG_NATIVE, REVISION_DRAFTS } from '../lib/types';
+import { allCharacters, allLocations, checkCharacterConsistency, convertTreatmentToScenes, eighths, ELEMENT_LABEL, pageCount, wordCount } from '../lib/screenplay';
 import { saveVersion, persistent } from '../lib/db';
 import { canTransliterate } from '../lib/translit';
+import { scriptReader, type TTSState } from '../lib/tts';
 import { useScriptState } from './useScriptState';
 import { Ctx, type ActiveField, type EditorCtx } from './context';
 import { SceneView } from './ScriptPage';
@@ -12,6 +13,8 @@ import { ScenePanel } from './ScenePanel';
 import { Board, Navigator } from './Scenes';
 import { CharactersDialog, ConsistencyDialog, ExportDialog, FindBar, SettingsDialog, TitlePageDialog, VersionsDialog } from './Dialogs';
 import { BenchmarkDialog } from './BenchmarkDialog';
+import { WritingLadder } from './WritingLadder';
+import { PinnedIdeaBar } from './PinnedIdeaBar';
 
 type DialogName = 'characters' | 'check' | 'versions' | 'export' | 'title' | 'settings' | 'benchmark' | null;
 
@@ -22,6 +25,7 @@ export function Editor({ initial, settings, onSettings, onBack }: { initial: Scr
   const { script, ops, saveState, focusReq, requestFocus, undo, redo, canUndo, canRedo } = useScriptState(initial);
   const active = useRef<ActiveField | null>(null);
   const [activeIds, setActiveIds] = useState<{ sceneId: string; fieldId: string } | null>(null);
+  const [stage, setStage] = useState<WritingStage>(script.stage ?? 'screenplay');
   const [view, setView] = useState<'write' | 'board'>('write');
   const [padOpen, setPadOpen] = useState(isTouch);
   const [panelOpen, setPanelOpen] = useState(!isTouch && window.innerWidth > 1180);
@@ -30,6 +34,19 @@ export function Editor({ initial, settings, onSettings, onBack }: { initial: Scr
   const [dialog, setDialog] = useState<DialogName>(null);
   const [translit, setTranslit] = useState(settings.transliterate);
   const [savedFlash, setSavedFlash] = useState('');
+
+  // Read-Aloud with character voices state
+  const [ttsState, setTtsState] = useState<TTSState>({
+    playing: false,
+    paused: false,
+    currentSceneId: null,
+    currentBlockId: null,
+    currentSpeaker: '',
+  });
+
+  useEffect(() => {
+    return scriptReader.subscribe(setTtsState);
+  }, []);
 
   useEffect(() => setTranslit(settings.transliterate), [settings.transliterate]);
 
@@ -44,6 +61,11 @@ export function Editor({ initial, settings, onSettings, onBack }: { initial: Scr
   const pagesPerScene = useMemo(() => pc.perScene.map(eighths), [pc]);
   const issues = useMemo(() => checkCharacterConsistency(script).length, [script]);
   const words = useMemo(() => wordCount(script), [script]);
+
+  const revDraft = useMemo(
+    () => REVISION_DRAFTS.find((d) => d.id === (script.revisionColor ?? 'white')) ?? REVISION_DRAFTS[0],
+    [script.revisionColor],
+  );
 
   const ctx: EditorCtx = {
     script, settings, updateSettings: onSettings, ops, focusReq, requestFocus, active, setActive,
@@ -74,7 +96,6 @@ export function Editor({ initial, settings, onSettings, onBack }: { initial: Scr
     const sc = ops.get().scenes.find((s) => s.id === a.sceneId);
     if (!sc) return;
     if (t === 'heading') {
-      // new scene after the current one
       ops.addScene(sc.id, '');
       return;
     }
@@ -85,6 +106,20 @@ export function Editor({ initial, settings, onSettings, onBack }: { initial: Scr
     }
     ops.setBlockType(sc.id, a.fieldId, t);
     requestFocus(a.fieldId, a.start, a.end);
+  };
+
+  const handleSelectStage = (nextStage: WritingStage) => {
+    setStage(nextStage);
+    ops.update((s) => ({ ...s, stage: nextStage }), false);
+  };
+
+  const handleConvertToScreenplay = () => {
+    if (!script.treatment?.scenes.length) return;
+    const newScenes = convertTreatmentToScenes(script.treatment);
+    ops.update((s) => ({ ...s, scenes: newScenes, stage: 'screenplay' }), true);
+    setStage('screenplay');
+    setSavedFlash('Treatment converted to Screenplay!');
+    setTimeout(() => setSavedFlash(''), 2500);
   };
 
   // global shortcuts
@@ -118,35 +153,89 @@ export function Editor({ initial, settings, onSettings, onBack }: { initial: Scr
     return () => window.removeEventListener('keydown', onKey);
   }, [undo, redo, ops]);
 
-  const keep = (e: React.PointerEvent) => e.preventDefault(); // keep caret in the text while tapping tools
+  const keep = (e: React.PointerEvent) => e.preventDefault();
 
   return (
     <Ctx.Provider value={ctx}>
-      <div className={'editor' + (padOpen ? ' pad-open' : '') + (navOpen ? ' nav-open' : '') + (panelOpen && view === 'write' ? ' panel-open' : '')}>
+      <div className={'editor' + (padOpen ? ' pad-open' : '') + (navOpen && stage === 'screenplay' ? ' nav-open' : '') + (panelOpen && view === 'write' && stage === 'screenplay' ? ' panel-open' : '')}>
         <header className="topbar">
           <button className="icon" onClick={onBack} aria-label="Back to library" title="Library">‹</button>
-          <button className="icon" onClick={() => setNavOpen((v) => !v)} aria-label="Toggle scene list" title="Scenes">☰</button>
+          {stage === 'screenplay' && (
+            <button className="icon" onClick={() => setNavOpen((v) => !v)} aria-label="Toggle scene list" title="Scenes">☰</button>
+          )}
           <button className="title-btn" onClick={() => setDialog('title')} title="Edit title page">
             <span className="t">{script.title || 'Untitled'}</span>
             <span className="lang">{LANG_NATIVE[script.language]}</span>
+            {revDraft && (
+              <span className="revision-tag" style={{ borderLeftColor: revDraft.hex }} title={`WGA Revision: ${revDraft.name}`}>
+                {revDraft.label}
+              </span>
+            )}
           </button>
-          <div className="seg view-toggle" role="tablist">
-            <button role="tab" aria-selected={view === 'write'} className={view === 'write' ? 'on' : ''} onClick={() => setView('write')}>Script</button>
-            <button role="tab" aria-selected={view === 'board'} className={view === 'board' ? 'on' : ''} onClick={() => setView('board')}>Cards</button>
-          </div>
+
+          {/* The Writing Ladder Stages (Proposal Slides 11 & 12) */}
+          <nav className="stage-ladder-nav" role="tablist" aria-label="The Writing Ladder">
+            <button role="tab" aria-selected={stage === 'idea'} className={stage === 'idea' ? 'on' : ''} onClick={() => handleSelectStage('idea')} title="Stage 1: Idea (The Seed)">1. Idea</button>
+            <button role="tab" aria-selected={stage === 'story'} className={stage === 'story' ? 'on' : ''} onClick={() => handleSelectStage('story')} title="Stage 2: Story (Kathai - Free Prose)">2. Story</button>
+            <button role="tab" aria-selected={stage === 'synopsis'} className={stage === 'synopsis' ? 'on' : ''} onClick={() => handleSelectStage('synopsis')} title="Stage 3: Synopsis (Major Beats)">3. Synopsis</button>
+            <button role="tab" aria-selected={stage === 'treatment'} className={stage === 'treatment' ? 'on' : ''} onClick={() => handleSelectStage('treatment')} title="Stage 4: Treatment (Scene Structure)">4. Treatment</button>
+            <button role="tab" aria-selected={stage === 'screenplay'} className={stage === 'screenplay' ? 'on' : ''} onClick={() => handleSelectStage('screenplay')} title="Stage 5: Screenplay (Strict Format)">5. Screenplay</button>
+          </nav>
+
+          {stage === 'screenplay' && (
+            <div className="seg view-toggle" role="tablist">
+              <button role="tab" aria-selected={view === 'write'} className={view === 'write' ? 'on' : ''} onClick={() => setView('write')}>Script</button>
+              <button role="tab" aria-selected={view === 'board'} className={view === 'board' ? 'on' : ''} onClick={() => setView('board')}>Cards</button>
+            </div>
+          )}
+
           <div className="spacer" />
+
+          {/* Read-Aloud with character voices */}
+          {stage === 'screenplay' && (
+            <button
+              className={'tb' + (ttsState.playing ? ' on gold' : '')}
+              onClick={() => {
+                if (ttsState.playing) {
+                  if (ttsState.paused) scriptReader.resume();
+                  else scriptReader.pause();
+                } else {
+                  const targetScene = activeScene ?? script.scenes[0];
+                  if (targetScene) scriptReader.playScene(targetScene, script.language);
+                }
+              }}
+              title="Read script aloud with distinct on-device character voices (PDF idea)"
+            >
+              {ttsState.playing ? (ttsState.paused ? '▶ Resume Speech' : '⏸ Pause Speech') : '🔊 Read Aloud'}
+            </button>
+          )}
+          {ttsState.playing && (
+            <button className="icon small danger" onClick={() => scriptReader.stop()} title="Stop Read Aloud">
+              ■
+            </button>
+          )}
+
           <button className="icon" onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo (⌘Z)">↶</button>
           <button className="icon" onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo (⇧⌘Z)">↷</button>
-          <button className="icon" onClick={() => setFindOpen((v) => !v)} aria-label="Find and replace" title="Find & replace (⌘F)">⌕</button>
+          {stage === 'screenplay' && (
+            <button className="icon" onClick={() => setFindOpen((v) => !v)} aria-label="Find and replace" title="Find & replace (⌘F)">⌕</button>
+          )}
           <button className="tb" onClick={() => setDialog('characters')}>Characters</button>
-          <button className="tb" onClick={() => setDialog('check')}>Check{issues > 0 && <span className="badge">{issues}</span>}</button>
+          {stage === 'screenplay' && (
+            <button className="tb" onClick={() => setDialog('check')}>Check{issues > 0 && <span className="badge">{issues}</span>}</button>
+          )}
           <button className="tb" onClick={() => setDialog('versions')}>Versions</button>
           <button className="tb gold" onClick={() => setDialog('benchmark')} title="Handwriting recognition benchmark & calibration">🔬 HWR Lab</button>
           <button className="tb primary" onClick={() => setDialog('export')}>Export</button>
           <button className="icon" onClick={() => setDialog('settings')} aria-label="Settings" title="Settings">⚙</button>
         </header>
 
-        {view === 'write' && (
+        {/* Pinned Idea Bar (Pinned across all stages) */}
+        {stage !== 'idea' && (
+          <PinnedIdeaBar idea={script.idea} onOpenIdeaStage={() => handleSelectStage('idea')} />
+        )}
+
+        {stage === 'screenplay' && view === 'write' && (
           <div className="elbar" role="toolbar" aria-label="Screenplay element">
             <button onPointerDown={keep} onClick={() => setType('heading')} title="New scene">+ Scene</button>
             {TOOL_TYPES.map((t, i) => (
@@ -157,8 +246,8 @@ export function Editor({ initial, settings, onSettings, onBack }: { initial: Scr
             {onHeading && <span className="muted small">Scene heading</span>}
             <div className="spacer" />
             {canTransliterate(script.language) && (
-              <button onPointerDown={keep} className={'translit' + (translit ? ' on' : '')} onClick={() => setTranslit((v) => !v)} title="Manglish/Tanglish typing" aria-pressed={translit}>
-                {script.language === 'ml' ? 'അ' : 'அ'} ← a
+              <button onPointerDown={keep} className={'translit' + (translit ? ' on' : '')} onClick={() => setTranslit((v) => !v)} title="Phonetic typing" aria-pressed={translit}>
+                {script.language === 'ml' ? 'അ' : script.language === 'ta' ? 'அ' : script.language === 'te' ? 'అ' : script.language === 'kn' ? 'ಅ' : 'A'} ← a
               </button>
             )}
             <button onPointerDown={keep} className={'pen-toggle' + (padOpen ? ' on' : '')} onClick={() => setPadOpen((v) => !v)} aria-pressed={padOpen} title="Handwriting pad (⇧⌘E)">
@@ -168,32 +257,61 @@ export function Editor({ initial, settings, onSettings, onBack }: { initial: Scr
           </div>
         )}
 
-        {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
+        {findOpen && stage === 'screenplay' && <FindBar onClose={() => setFindOpen(false)} />}
 
-        <div className="workspace">
-          {navOpen && <Navigator activeSceneId={activeSceneId} pages={pagesPerScene} onJump={(s) => jump(s.id)} />}
-          <main className="main">
-            {view === 'write' ? (
-              <div className="page" lang={script.language}>
-                {script.scenes.map((s, i) => (
-                  <SceneView key={s.id} scene={s} number={i + 1} pages={pagesPerScene[i]} />
-                ))}
-              </div>
-            ) : (
-              <Board pages={pagesPerScene} onOpen={(s) => jump(s.id)} />
-            )}
+        {/* Writing Ladder stages 1-4 */}
+        {stage !== 'screenplay' ? (
+          <main className="main ladder-main">
+            <WritingLadder
+              stage={stage}
+              script={script}
+              translit={translit}
+              onUpdate={ops.update}
+              onSelectStage={handleSelectStage}
+              onConvertToScreenplay={handleConvertToScreenplay}
+            />
           </main>
-          {panelOpen && view === 'write' && activeScene && (
-            <ScenePanel scene={activeScene} number={activeSceneIdx + 1} pages={pagesPerScene[activeSceneIdx]} onClose={() => setPanelOpen(false)} />
-          )}
-        </div>
+        ) : (
+          <div className="workspace">
+            {navOpen && <Navigator activeSceneId={activeSceneId} pages={pagesPerScene} onJump={(s) => jump(s.id)} />}
+            <main className="main">
+              {view === 'write' ? (
+                <div className="page" lang={script.language}>
+                  {script.scenes.map((s, i) => (
+                    <SceneView key={s.id} scene={s} number={i + 1} pages={pagesPerScene[i]} />
+                  ))}
+                </div>
+              ) : (
+                <Board pages={pagesPerScene} onOpen={(s) => jump(s.id)} />
+              )}
+            </main>
+            {panelOpen && view === 'write' && activeScene && (
+              <ScenePanel scene={activeScene} number={activeSceneIdx + 1} pages={pagesPerScene[activeSceneIdx]} onClose={() => setPanelOpen(false)} />
+            )}
+          </div>
+        )}
 
-        {padOpen && view === 'write' && <HandwritingPad onClose={() => setPadOpen(false)} />}
+        {padOpen && <HandwritingPad onClose={() => setPadOpen(false)} />}
 
         <footer className="status">
-          <span>{script.scenes.length} scenes</span>
-          <span title="Estimated with script-aware calibration">≈ {pc.pages.toFixed(1)} pages · ~{Math.max(1, pc.minutes)} min</span>
-          <span>{words.toLocaleString('en-IN')} words</span>
+          <span className="status-stage-label">Stage: <b>{stage.toUpperCase()}</b></span>
+          {stage === 'screenplay' ? (
+            <>
+              <span>{script.scenes.length} scenes</span>
+              <span title="Estimated with script-aware calibration">≈ {pc.pages.toFixed(1)} pages · ~{Math.max(1, pc.minutes)} min</span>
+              <span>{words.toLocaleString('en-IN')} words</span>
+            </>
+          ) : (
+            <span>
+              {stage === 'idea'
+                ? (script.idea?.genre || 'Seed stage')
+                : stage === 'story'
+                ? `${(script.story?.prose || '').split(/\s+/).filter(Boolean).length} story words`
+                : stage === 'synopsis'
+                ? `${(script.synopsis?.prose || '').split(/\s+/).filter(Boolean).length} synopsis words`
+                : `${script.treatment?.scenes.length ?? 0} treatment scene cards`}
+            </span>
+          )}
           <span className="spacer" />
           {persistent ? (
             <span className={'save ' + saveState}>{savedFlash || (saveState === 'saved' ? '✓ Saved on this device' : saveState === 'saving' ? 'Saving…' : '⚠ Not saved')}</span>

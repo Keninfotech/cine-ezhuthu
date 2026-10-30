@@ -89,7 +89,7 @@ export function Library({ onOpen, onSettings }: { onOpen: (id: string) => void; 
             <label>Title<input className="input" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. മഴക്കാലം" /></label>
             <div className="lbl">Writing language</div>
             <div className="seg big">
-              {(['ml', 'ta', 'en'] as Lang[]).map((l) => (
+              {(['ml', 'ta', 'te', 'kn', 'en'] as Lang[]).map((l) => (
                 <button type="button" key={l} className={l === lang ? 'on' : ''} onClick={() => setLang(l)} aria-pressed={l === lang}>{LANG_NATIVE[l]}</button>
               ))}
             </div>
