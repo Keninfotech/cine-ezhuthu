@@ -4,7 +4,7 @@ import { breakdown, cueName } from './screenplay';
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 
 const FONT_STACK =
-  "'Courier Prime','Courier New',Courier,'Noto Sans Malayalam','Manjari','Malayalam Sangam MN','Kartika','Noto Sans Tamil','Tamil Sangam MN','Latha',monospace";
+  "'Courier Prime','Courier New',Courier,'Noto Sans Malayalam','Manjari','Malayalam Sangam MN','Kartika','Noto Sans Tamil','Tamil Sangam MN','Latha','Noto Sans Kannada','Kedage','Mallige','Tunga','Noto Sans Telugu','Gautami',monospace";
 
 /** Screenplay CSS, shared by print/PDF and Word export. Industry layout on US Letter. */
 export const SCREENPLAY_CSS = `

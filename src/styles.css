@@ -24,9 +24,9 @@
   --ok: #28a745;
 
   /* Typography */
-  --ui: 'Inter', system-ui, -apple-system, 'Segoe UI', 'Noto Sans Malayalam', 'Noto Sans Tamil', sans-serif;
+  --ui: 'Inter', system-ui, -apple-system, 'Segoe UI', 'Noto Sans Malayalam', 'Noto Sans Tamil', 'Noto Sans Kannada', 'Noto Sans Telugu', sans-serif;
   --serif: Georgia, 'Times New Roman', 'Noto Serif Malayalam', 'Noto Serif Tamil', serif;
-  --script: 'Courier Prime', 'Courier New', Courier, 'Noto Sans Malayalam', 'Manjari', 'Malayalam Sangam MN', 'Noto Sans Tamil', 'Tamil Sangam MN', monospace;
+  --script: 'Courier Prime', 'Courier New', Courier, 'Noto Sans Malayalam', 'Manjari', 'Malayalam Sangam MN', 'Noto Sans Tamil', 'Tamil Sangam MN', 'Noto Sans Kannada', 'Kedage', 'Tunga', 'Noto Sans Telugu', 'Gautami', monospace;
   --radius: 10px;
   color-scheme: dark;
 }
